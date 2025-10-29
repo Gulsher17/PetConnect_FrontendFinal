@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Brand tokens */
+:root{
+  --pc-primary:#e76f51;   /* Warm coral */
+  --pc-accent:#f4a261;    /* Sand */
+  --pc-deep:#264653;      /* Deep navy/teal */
+  --pc-ink:#111827;       /* Text */
+  --pc-muted:#6b7280;     /* Muted text */
+  --pc-bg:#ffffff;
+  --pc-bg-soft:#f8fafc;
+}
+
+html, body, #root { height: 100%; }
+body { color: var(--pc-ink); background: var(--pc-bg-soft); }
+
+/* Utility classes */
+.pc-btn {
+  @apply inline-flex items-center justify-center rounded-xl px-5 py-2.5 font-medium transition shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1;
+}
+.pc-btn-primary{
+  background: var(--pc-primary);
+  color:#fff;
+}
+.pc-btn-primary:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(231,111,81,.2);
+}
+.pc-btn-primary:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+.pc-btn-outline:hover{ background: #f9fafb; }
+
+.pc-chip{
+  @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold border;
+  border-color: color-mix(in oklab, var(--pc-deep) 20%, white);
+  color: var(--pc-deep);
+  background: #fff;
+}
+.pc-card{
+  @apply bg-white rounded-2xl shadow-sm ring-1 ring-gray-100;
+}
+.pc-card:hover{ box-shadow: 0 10px 22px rgba(0,0,0,.08); }
+
+
+h1, h2, h3 {
+  letter-spacing: -0.5px;
+  color: var(--pc-deep);
+}
+
+.text-muted {
+  color: var(--pc-muted);
+}
+
+/* Section divider */
+.pc-divider {
+  height: 1px;
+  background: color-mix(in oklab, var(--pc-deep) 20%, transparent);
+}
+
+body { font-size: 17px; }
+h1 { font-size: 2.9rem; line-height: 1.1; }
+h2 { font-size: 2.2rem; line-height: 1.2; }
+
+h1, h2, h3, h4 {
+  color: var(--pc-primary);
+  font-weight: 800;
+}
+
+body {
+  color: var(--pc-deep);
+  font-weight: 450;
+}
+
+p {
+  color: var(--pc-muted);
+}
+
+@keyframes fadeScale {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+.fade-scale {
+  animation: fadeScale .18s ease-out;
+}
+
+@keyframes fadein {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fadein { animation: fadein .18s ease-out; }
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slideDown { animation: slideDown .22s ease-out; }
+
+#rec-carousel::-webkit-scrollbar {
+  height: 8px;
+}
+#rec-carousel::-webkit-scrollbar-thumb {
+  background: #d3d3d3;
+  border-radius: 4px;
+}
+#rec-carousel {
+  scrollbar-width: thin;
+  scrollbar-color: #d3d3d3 transparent;
+}
