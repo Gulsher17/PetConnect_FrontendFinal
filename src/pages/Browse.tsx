@@ -8,9 +8,11 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../features/auth/useAuth";
 import PetCard from "../components/layout/PetCard";
 
+const base = import.meta.env.VITE_FILE_BASE_URL;
+
 // ✅ Correct personal listings fetch wrapper
 async function listPersonalPets(token: string) {
-  const res = await fetch("http://localhost:5001/api/pet-files/listings", {
+  const res = await fetch(`${base}/pet-files/listings`, {
     headers: {
       "x-auth-token": token,
     },

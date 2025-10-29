@@ -7,6 +7,8 @@ import { http } from "../lib/http";
 import { useNavigate } from "react-router-dom";
 import { ChipMulti } from "../components/ui/chipSelector";
 
+const base = import.meta.env.VITE_FILE_BASE_URL;
+
 export default function ProfileSetup() {
   const { token, user, setTokenAndLoad } = useAuth();
   const navigate = useNavigate();
@@ -18,9 +20,9 @@ export default function ProfileSetup() {
   // ✅ Avatar URL Handling (supports string OR object)
   const avatarUrl =
     typeof user?.avatar === "string"
-      ? "http://localhost:5001/" + user.avatar
+      ? `${base}/${user.avatar}`
       : user?.avatar?.url
-      ? "http://localhost:5001/" + user.avatar.url
+      ?`${base}/${user.avatar.url}`
       : null;
 
   // --- Step state (wizard)
