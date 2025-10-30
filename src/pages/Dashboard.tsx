@@ -8,7 +8,6 @@ import { http } from "../lib/http";
 import toast from "react-hot-toast";
 import PetCard from "../components/layout/PetCard";
 
-// -- Loose types on purpose (avoid TS narrowing issues that caused "never" errors)
 type AnyObj = Record<string, any>;
 
 export default function Dashboard() {
@@ -21,47 +20,49 @@ export default function Dashboard() {
   const [requests, setRequests] = useState<AnyObj[]>([]);
   const [favorites, setFavorites] = useState<AnyObj[]>([]);
   const [activity, setActivity] = useState<AnyObj[]>([]);
+  const [myListings, setMyListings] = useState<AnyObj[]>([]); // ✅ NEW: personal listings
 
-  const [tab, setTab] = useState<"overview" | "favorites" | "requests" | "activity">("overview");
+  const [tab, setTab] = useState<
+    "overview" | "favorites" | "requests" | "activity" | "myListings"
+  >("overview");
 
   useEffect(() => {
     let mounted = true;
 
     (async () => {
       if (!token) {
-        // rely on Route guard/redirection elsewhere; do not hard navigate to avoid breaking flow
         setLoading(false);
         return;
       }
 
       setLoading(true);
 
-      // 1) /users/me (fallback /auth/me)
+      // 1) Me (fallback to /auth/me)
       const meRes = await safeGet(() => http.get("/users/me"))
         .then(r => (r.ok ? r : safeGet(() => http.get("/auth/me"))));
-
       if (!meRes.ok || !meRes.data) {
         toast.error("Session error. Please sign in again.");
         setLoading(false);
         return;
       }
-
       const meData: AnyObj = meRes.data || {};
       if (mounted) setMe(meData);
 
-      // 2) Favorites: populated or ids -> fetch
+      // 2) Favorites (resolve ids if needed)
       const favPets = await resolveFavorites(meData);
       if (mounted) setFavorites(favPets);
 
-      // 3) Pets
+      // 3) Shelter/pet catalog
       const petsRes = await safeGet(() => http.get("/pets"));
       if (mounted) {
         const allPets: AnyObj[] = Array.isArray(petsRes.data) ? petsRes.data : [];
-        const av = allPets.filter(p => String(p?.status || "").toLowerCase().includes("available"));
+        const av = allPets.filter(p =>
+          String(p?.status || "").toLowerCase().includes("available")
+        );
         setAvailablePets(av);
       }
 
-      // 4) Requests
+      // 4) My adoption requests
       const reqRes = await safeGet(() => http.get("/adoptions/my-requests"));
       if (mounted) {
         const reqs: AnyObj[] = Array.isArray(reqRes.data)
@@ -72,7 +73,7 @@ export default function Dashboard() {
         setRequests(reqs.filter(r => r && (r.pet || r.status)));
       }
 
-      // 5) Activity (ignore if 403/404)
+      // 5) Activity (best effort)
       if (meData?._id) {
         const actRes = await safeGet(() => http.get(`/users/activity-logs/${meData._id}`));
         if (mounted) {
@@ -83,6 +84,18 @@ export default function Dashboard() {
             : [];
           setActivity(logs);
         }
+      }
+
+      // 6) ✅ My personal listings (authoritative source)
+      const myListRes = await safeGet(() => http.get("/pet-files/my-listings"));
+      if (mounted) {
+        const listPayload = myListRes.data;
+        const list = Array.isArray(listPayload?.listings)
+          ? listPayload.listings
+          : Array.isArray(listPayload)
+          ? listPayload
+          : [];
+        setMyListings(list);
       }
 
       if (mounted) setLoading(false);
@@ -110,7 +123,6 @@ export default function Dashboard() {
   }, [me, requests]);
 
   if (!token) {
-    // Keep UX quiet if route guards handle redirect.
     return (
       <div className="min-h-screen flex items-center justify-center">
         Please sign in…
@@ -200,12 +212,49 @@ export default function Dashboard() {
               {t}
             </button>
           ))}
+
+          {/* ✅ Only adopters can see "My Listings" */}
+          {me?.role === "adopter" && (
+            <button
+              onClick={() => setTab("myListings")}
+              className={`pb-2 capitalize ${
+                tab === "myListings"
+                  ? "border-b-2 border-[var(--pc-primary)] text-[var(--pc-primary)] font-semibold"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              My Listings
+            </button>
+          )}
         </div>
 
-        {/* Content */}
+        {/* ✅ My Listings (uses /pet-files/my-listings) */}
+        {tab === "myListings" && me?.role === "adopter" && (
+          <section className="pc-card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">My Listings</h2>
+              <Link to="/create-listing" className="pc-btn pc-btn-primary text-sm">
+                + Add Listing
+              </Link>
+            </div>
+
+            {Array.isArray(myListings) && myListings.length > 0 ? (
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {myListings.map((pet) => (
+                  <MyListingCard key={pet._id} pet={pet} />
+                ))}
+              </div>
+            ) : (
+              <div className="text-gray-500 text-center mt-4">
+                You have no pet listings yet.
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Other sections remain untouched */}
         {tab === "overview" && (
           <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left: Available + Requests */}
             <div className="lg:col-span-2 space-y-6">
               <div className="pc-card p-5">
                 <div className="flex items-center justify-between mb-4">
@@ -239,7 +288,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Right: Activity */}
             <aside className="space-y-6">
               <div className="pc-card p-5">
                 <h2 className="text-xl font-semibold mb-4">Recent Activity</h2>
@@ -308,8 +356,53 @@ export default function Dashboard() {
   );
 }
 
-/* ========== UI bits (safe + brand) ========== */
+/* ========== MyListingCard (UI-only; no backend changes) ========== */
+function MyListingCard({ pet }: { pet: AnyObj }) {
+  const img =
+    Array.isArray(pet?.images)
+      ? (pet.images[0]?.url || pet.images[0])
+      : "/fallback.jpg";
 
+  const status = String(pet?.status || "available_fostering");
+
+  const onDelete = async () => {
+    if (!confirm("Delete this listing?")) return;
+    try {
+      await http.delete(`/pet-files/user-pet/${pet._id}`);
+      toast.success("Listing deleted!");
+      // quick refresh of the tab (keeps rest of dashboard intact)
+      window.location.reload();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.msg || "Failed to delete listing.");
+    }
+  };
+
+  return (
+    <div className="pc-card p-4 flex flex-col gap-2">
+      <img src={img} className="w-full h-40 object-cover rounded-lg" />
+      <h3 className="font-bold text-lg">{pet?.name || "Pet"}</h3>
+      {pet?.breed && <p className="text-sm text-gray-500">{pet.breed}</p>}
+      <p className="text-sm text-gray-600 capitalize">Status: {status}</p>
+
+      <div className="flex gap-2 mt-auto">
+        <Link to={`/pet/${pet._id}`} className="pc-btn pc-btn-outline w-1/3 text-center">
+          View
+        </Link>
+        <Link
+          to={`/create-listing?edit=${pet._id}`}
+          className="pc-btn pc-btn-primary w-1/3 text-center"
+        >
+          Edit
+        </Link>
+        <button onClick={onDelete} className="pc-btn pc-btn-danger w-1/3">
+          Delete
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ========== UI bits (unchanged) ========== */
 function StatCard({ title, value, accent }: { title: string; value: number | string; accent?: string }) {
   return (
     <div className="pc-card p-5">
@@ -393,26 +486,21 @@ function ActivityRow({ item }: { item: AnyObj }) {
 }
 
 /* ========== helpers ========== */
-
 async function safeGet<T = any>(fn: () => Promise<{ data: T }>) {
   try {
     const res = await fn();
     return { ok: true as const, data: res.data as T };
-  } catch (e: any) {
+  } catch (_e: any) {
     return { ok: false as const, data: undefined as unknown as T };
   }
 }
 
 async function resolveFavorites(me: AnyObj | null): Promise<AnyObj[]> {
   if (!me?.favoritedPets || me.favoritedPets.length === 0) return [];
-
-  // If first entry looks like an object with name/images => already populated
   const first = me.favoritedPets[0];
   if (first && typeof first === "object") {
     return (me.favoritedPets as AnyObj[]).filter(Boolean);
   }
-
-  // Otherwise assume ids -> fetch each
   const ids: string[] = me.favoritedPets as string[];
   const results = await Promise.all(
     ids.map(async (id) => {
