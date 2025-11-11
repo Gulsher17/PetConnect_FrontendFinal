@@ -1,4 +1,3 @@
-// src/routes/index.tsx
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Landing from "../pages/Landing";
 import Login from "../pages/Login";
@@ -9,7 +8,8 @@ import ProfileSetup from "../pages/ProfileSetup";
 import PrivateRoute from "./PrivateRoute";
 import PetProfile from "../pages/PetProfile";
 import DashboardRouter from "../pages/DashboardRouter";
-import StaffDashboard from "../pages/StaffDashboard"; // ← NEW
+import AdminDashboard from "../pages/AdminDashboard"
+import StaffDashboard from "../pages/StaffDashboard";
 import CreateListing from "@/pages/CreateListing";
 
 export default function AppRouter() {
@@ -29,6 +29,9 @@ export default function AppRouter() {
 
         {/* NEW: staff dashboard */}
         <Route path="/staff" element={<PrivateRoute><StaffDashboard /></PrivateRoute>} />
+        
+        {/* FIXED: admin dashboard route */}
+        <Route path="/admin" element={<PrivateRoute><AdminDashboard /></PrivateRoute>} />
 
         {/* Optional: smart router (hit /app to route by role) */}
         <Route path="/app" element={<PrivateRoute><DashboardRouter /></PrivateRoute>} />

@@ -38,8 +38,10 @@ export default function DashboardRouter() {
       if (!mounted) return;
 
       const role = String(me?.role || "").toLowerCase();
-      if (role === "staff" || role === "admin") {
+      if (role === "staff") {
         nav("/staff", { replace: true });
+      } else if (role === "admin") {
+        nav("/admin", { replace: true });
       } else {
         nav("/dashboard", { replace: true }); // adopter dashboard (already exists)
       }
