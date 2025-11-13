@@ -10,7 +10,9 @@ import PrivateRoute from "./PrivateRoute";
 import PetProfile from "../pages/PetProfile";
 import DashboardRouter from "../pages/DashboardRouter";
 import StaffDashboard from "../pages/StaffDashboard"; // ← NEW
-import CreateListing from "@/pages/CreateListing";
+import CreateListing from "../pages/CreateListing";
+import VetDashboard from "../pages/VetDashboard";
+import CreatePetListing from "@/pages/CreatePetListing";
 
 export default function AppRouter() {
   return (
@@ -26,9 +28,12 @@ export default function AppRouter() {
         <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
         <Route path="/pet/:id" element={<PrivateRoute><PetProfile /></PrivateRoute>} />
         <Route path="/create-listing" element={<PrivateRoute><CreateListing /></PrivateRoute>} />
+        <Route path="/create-listing-new" element={<PrivateRoute><CreatePetListing /></PrivateRoute>} />
 
         {/* NEW: staff dashboard */}
-        <Route path="/staff" element={<PrivateRoute><StaffDashboard /></PrivateRoute>} />
+        <Route path="/staff" element={<PrivateRoute><StaffDashboard /></PrivateRoute>} />\
+        <Route path="/vet" element={<PrivateRoute><VetDashboard /></PrivateRoute>} />
+
 
         {/* Optional: smart router (hit /app to route by role) */}
         <Route path="/app" element={<PrivateRoute><DashboardRouter /></PrivateRoute>} />
