@@ -11,6 +11,7 @@ import DashboardRouter from "../pages/DashboardRouter";
 import AdminDashboard from "../pages/AdminDashboard"
 import StaffDashboard from "../pages/StaffDashboard";
 import CreateListing from "@/pages/CreateListing";
+import BlockchainDemo from '../components/BlockchainDemo/BlockChainDemo';
 
 export default function AppRouter() {
   return (
@@ -20,6 +21,7 @@ export default function AppRouter() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/profile-setup" element={<ProfileSetup />} />
+        <Route path="/blockchain-demo" element={<PrivateRoute><BlockchainDemo /></PrivateRoute>} />
 
         {/* existing */}
         <Route path="/browse" element={<PrivateRoute><Browse /></PrivateRoute>}/>
@@ -30,7 +32,7 @@ export default function AppRouter() {
         {/* NEW: staff dashboard */}
         <Route path="/staff" element={<PrivateRoute><StaffDashboard /></PrivateRoute>} />
         
-        {/* FIXED: admin dashboard route */}
+        {/* admin dashboard route */}
         <Route path="/admin" element={<PrivateRoute><AdminDashboard /></PrivateRoute>} />
 
         {/* Optional: smart router (hit /app to route by role) */}
