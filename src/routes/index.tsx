@@ -11,7 +11,7 @@ import DashboardRouter from "../pages/DashboardRouter";
 import AdminDashboard from "../pages/AdminDashboard"
 import StaffDashboard from "../pages/StaffDashboard";
 import CreateListing from "@/pages/CreateListing";
-import BlockchainDemo from '../components/BlockchainDemo/BlockChainDemo';
+import BlockchainDemo from "../components/BlockchainDemo/BlockChainDemo";
 
 export default function AppRouter() {
   return (

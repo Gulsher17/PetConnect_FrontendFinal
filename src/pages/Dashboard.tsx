@@ -7,7 +7,7 @@ import { useAuth } from "../features/auth/useAuth";
 import { http } from "../lib/http";
 import toast from "react-hot-toast";
 import PetCard from "../components/layout/PetCard";
-import BlockchainDemo from "../components/BlockchainDemo/BlockchainDemo"
+// import { SocketTest } from '../components/SocketTest';
 
 type AnyObj = Record<string, any>;
 
@@ -241,6 +241,7 @@ export default function Dashboard() {
                 + Add Listing
               </Link>
             </div>
+            {/* <SocketTest /> */}  // testing socket connection
 
             {Array.isArray(myListings) && myListings.length > 0 ? (
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
