@@ -2,6 +2,7 @@ import NavBar from "../components/layout/NavBar";
 import Footer from "../components/layout/Footer";
 import { Link } from "react-router-dom";
 
+
 export default function Landing(){
   return (
     <div className="bg-white">
@@ -31,6 +32,7 @@ export default function Landing(){
       <h1 className="text-5xl lg:text-6xl font-extrabold leading-tight text-white drop-shadow-xl">
         Find Your Perfect Pet and<br/>Change a Life
       </h1>
+  
 
       <p className="mt-6 text-lg font-medium text-white/90 max-w-md">
         Trusted, transparent, and humane — built with shelters and responsible

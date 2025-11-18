@@ -7,6 +7,7 @@ import { useAuth } from "../features/auth/useAuth";
 import { http } from "../lib/http";
 import toast from "react-hot-toast";
 import PetCard from "../components/layout/PetCard";
+// import { SocketTest } from '../components/SocketTest';
 
 type AnyObj = Record<string, any>;
 
@@ -20,11 +21,10 @@ export default function Dashboard() {
   const [requests, setRequests] = useState<AnyObj[]>([]);
   const [favorites, setFavorites] = useState<AnyObj[]>([]);
   const [activity, setActivity] = useState<AnyObj[]>([]);
-  const [myListings, setMyListings] = useState<AnyObj[]>([]); // ✅ NEW: personal listings
+  const [myListings, setMyListings] = useState<AnyObj[]>([]); // personal listings
 
   const [tab, setTab] = useState<
-    "overview" | "favorites" | "requests" | "activity" | "myListings"
-  >("overview");
+    "overview" | "favorites" | "requests" | "activity" | "myListings">("overview");
 
   useEffect(() => {
     let mounted = true;
@@ -86,7 +86,7 @@ export default function Dashboard() {
         }
       }
 
-      // 6) ✅ My personal listings (authoritative source)
+      // 6)  My personal listings (authoritative source)
       const myListRes = await safeGet(() => http.get("/pet-files/my-listings"));
       if (mounted) {
         const listPayload = myListRes.data;
@@ -170,6 +170,9 @@ export default function Dashboard() {
               <Link to="/browse" className="pc-btn pc-btn-outline">
                 Browse Pets
               </Link>
+              <Link to="/blockchain-demo" className="pc-btn pc-btn-outline">
+     Blockchain Demo
+  </Link>
               <Link to="/profile-setup" className="pc-btn pc-btn-primary">
                 Edit Profile
               </Link>
@@ -195,6 +198,7 @@ export default function Dashboard() {
             title="Member Since"
             value={stats.memberSince ? stats.memberSince.toLocaleDateString() : "—"}
           />
+
         </section>
 
         {/* Tabs */}
@@ -237,6 +241,7 @@ export default function Dashboard() {
                 + Add Listing
               </Link>
             </div>
+            {/* <SocketTest /> */}  // testing socket connection
 
             {Array.isArray(myListings) && myListings.length > 0 ? (
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
