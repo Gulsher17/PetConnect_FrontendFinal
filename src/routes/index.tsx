@@ -11,11 +11,10 @@ import DashboardRouter from "../pages/DashboardRouter";
 import StaffDashboard from "../pages/StaffDashboard"; // ← NEW
 import CreateListing from "../pages/CreateListing";
 import VetDashboard from "../pages/VetDashboard";
-import CreatePetListing from "@/pages/CreatePetListing";
-import AdminDashboard from "../pages/AdminDashboard"
-import StaffDashboard from "../pages/StaffDashboard";
-import CreateListing from "@/pages/CreateListing";
+import CreatePetListing from "../pages/CreatePetListing";
 import BlockchainDemo from "../components/BlockchainDemo/BlockChainDemo";
+import AdminDashboard from "../pages/AdminDashboard";
+import ManageFosterRequests from "@/pages/ManageFosterRequests";
 
 export default function AppRouter() {
   return (
@@ -41,6 +40,7 @@ export default function AppRouter() {
         {/* admin dashboard route */}
         <Route path="/admin" element={<PrivateRoute><AdminDashboard /></PrivateRoute>} />
 
+        <Route path="/manage-foster-requests/:petId" element={<ManageFosterRequests />} />
         {/* Optional: smart router (hit /app to route by role) */}
         <Route path="/app" element={<PrivateRoute><DashboardRouter /></PrivateRoute>} />
       </Routes>
