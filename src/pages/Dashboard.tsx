@@ -7,7 +7,7 @@ import { useAuth } from "../features/auth/useAuth";
 import { http } from "../lib/http";
 import toast from "react-hot-toast";
 import PetCard from "../components/layout/PetCard";
-// import { SocketTest } from '../components/SocketTest';
+import MyListings from "../pages/MyListings";
 
 type AnyObj = Record<string, any>;
 
@@ -19,12 +19,183 @@ export default function Dashboard() {
   const [me, setMe] = useState<AnyObj | null>(null);
   const [availablePets, setAvailablePets] = useState<AnyObj[]>([]);
   const [requests, setRequests] = useState<AnyObj[]>([]);
+  const [fosterRequests, setFosterRequests] = useState<AnyObj[]>([]);
   const [favorites, setFavorites] = useState<AnyObj[]>([]);
   const [activity, setActivity] = useState<AnyObj[]>([]);
-  const [myListings, setMyListings] = useState<AnyObj[]>([]); // personal listings
+  const [myListings, setMyListings] = useState<AnyObj[]>([]);
 
   const [tab, setTab] = useState<
     "overview" | "favorites" | "requests" | "activity" | "myListings">("overview");
+  
+  // State for expandable request tabs
+  const [expandedRequestTab, setExpandedRequestTab] = useState<"adoption" | "foster" | null>("adoption");
+
+  // Fetch adoption requests from the correct endpoint
+  const fetchAdoptionRequests = async () => {
+    try {
+      console.log('Fetching adoption requests...');
+      const adoptionRes = await http.get("/adoptions/my-requests");
+      console.log('Adoption response:', adoptionRes.data);
+      
+      let adoptionRequests: AnyObj[] = [];
+      
+      // Handle different response formats
+      if (Array.isArray(adoptionRes.data)) {
+        adoptionRequests = adoptionRes.data;
+      } else if (Array.isArray(adoptionRes.data?.requests)) {
+        adoptionRequests = adoptionRes.data.requests;
+      } else if (Array.isArray(adoptionRes.data?.adoptions)) {
+        adoptionRequests = adoptionRes.data.adoptions;
+      }
+      
+      console.log('Processed adoption requests:', adoptionRequests.length);
+      setRequests(adoptionRequests.filter(r => r && (r.pet || r.status)));
+    } catch (error: any) {
+      console.error('Error fetching adoption requests:', error);
+      // If endpoint doesn't exist, try alternative
+      if (error.response?.status === 404) {
+        console.log('Adoption endpoint not found, trying pets endpoint...');
+        await fetchAdoptionRequestsFromPets();
+      }
+    }
+  };
+
+  // Fallback: Fetch adoption requests from pets data
+  const fetchAdoptionRequestsFromPets = async () => {
+    try {
+      const petsRes = await http.get("/pets");
+      const allPets = Array.isArray(petsRes.data) ? petsRes.data : [];
+      
+      const userAdoptionRequests: AnyObj[] = [];
+      const currentUserId = me?._id;
+      
+      allPets.forEach((pet: AnyObj) => {
+        // Check if user is the adopter of this pet
+        if (pet.adopter && (pet.adopter._id === currentUserId || pet.adopter === currentUserId)) {
+          userAdoptionRequests.push({
+            _id: `adoption-${pet._id}`,
+            status: pet.status === 'Adopted' ? 'approved' : 'pending',
+            submittedAt: pet.createdAt || new Date(),
+            pet: {
+              _id: pet._id,
+              name: pet.name,
+              images: pet.images,
+              breed: pet.breed,
+              age: pet.age,
+              location: pet.location,
+              status: pet.status,
+              owner: pet.owner,
+              description: pet.description
+            },
+            type: 'adoption'
+          });
+        }
+      });
+      
+      setRequests(userAdoptionRequests);
+    } catch (error) {
+      console.error('Error fetching adoption requests from pets:', error);
+    }
+  };
+
+  // Fetch ONLY foster requests that the current user has submitted (outgoing requests)
+  const fetchUserFosterRequests = async () => {
+    try {
+      console.log('Fetching user foster requests...');
+      
+      // Get all pets and find ones where user has submitted foster requests
+      const petsRes = await http.get("/pets");
+      const allPets = Array.isArray(petsRes.data) ? petsRes.data : [];
+      
+      const userFosterRequests: AnyObj[] = [];
+      const currentUserId = me?._id;
+      
+      console.log('Scanning', allPets.length, 'pets for user foster requests...');
+      
+      allPets.forEach((pet: AnyObj) => {
+        // Skip if this pet belongs to the current user (we don't want requests TO user's own pets)
+        const petOwnerId = pet.owner?._id || pet.owner;
+        if (petOwnerId === currentUserId) {
+          return; // Skip user's own pets
+        }
+        
+        // Check foster requests array for requests made by current user
+        if (pet.fosterRequests && Array.isArray(pet.fosterRequests)) {
+          pet.fosterRequests.forEach((request: AnyObj) => {
+            const requestUserId = request.user?._id || request.user;
+            if (requestUserId === currentUserId) {
+              console.log(`Found foster request by user for pet "${pet.name}":`, request.status);
+              userFosterRequests.push({
+                ...request,
+                _id: request._id || `foster-${pet._id}-${requestUserId}`,
+                pet: {
+                  _id: pet._id,
+                  name: pet.name,
+                  images: pet.images,
+                  breed: pet.breed,
+                  age: pet.age,
+                  gender: pet.gender,
+                  location: pet.location,
+                  status: pet.status,
+                  owner: pet.owner,
+                  description: pet.description,
+                  listingType: pet.listingType
+                },
+                type: 'foster'
+              });
+            }
+          });
+        }
+        
+        // Also check if user is current foster of this pet (approved requests)
+        if (pet.currentFoster && (pet.currentFoster._id === currentUserId || pet.currentFoster === currentUserId)) {
+          console.log(`Found current foster assignment for pet "${pet.name}"`);
+          userFosterRequests.push({
+            _id: `current-foster-${pet._id}`,
+            status: 'approved',
+            submittedAt: pet.createdAt || new Date(),
+            pet: {
+              _id: pet._id,
+              name: pet.name,
+              images: pet.images,
+              breed: pet.breed,
+              age: pet.age,
+              gender: pet.gender,
+              location: pet.location,
+              status: pet.status,
+              owner: pet.owner,
+              description: pet.description,
+              listingType: pet.listingType
+            },
+            type: 'foster',
+            isCurrentFoster: true
+          });
+        }
+      });
+      
+      console.log('Total user foster requests found:', userFosterRequests.length);
+      setFosterRequests(userFosterRequests);
+    } catch (error: any) {
+      console.error('Error fetching user foster requests:', error);
+      setFosterRequests([]);
+    }
+  };
+
+  // Add fetchMyListings function for refreshing listings
+  const fetchMyListings = async () => {
+    try {
+      const myListRes = await safeGet(() => http.get("/pet-files/my-listings"));
+      const listPayload = myListRes.data;
+      const list = Array.isArray(listPayload?.listings)
+        ? listPayload.listings
+        : Array.isArray(listPayload)
+        ? listPayload
+        : [];
+      setMyListings(list);
+    } catch (error) {
+      console.error('Failed to fetch listings:', error);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -63,15 +234,7 @@ export default function Dashboard() {
       }
 
       // 4) My adoption requests
-      const reqRes = await safeGet(() => http.get("/adoptions/my-requests"));
-      if (mounted) {
-        const reqs: AnyObj[] = Array.isArray(reqRes.data)
-          ? reqRes.data
-          : Array.isArray(reqRes.data?.requests)
-          ? reqRes.data.requests
-          : [];
-        setRequests(reqs.filter(r => r && (r.pet || r.status)));
-      }
+      await fetchAdoptionRequests();
 
       // 5) Activity (best effort)
       if (meData?._id) {
@@ -86,7 +249,7 @@ export default function Dashboard() {
         }
       }
 
-      // 6)  My personal listings (authoritative source)
+      // 6) My personal listings (authoritative source)
       const myListRes = await safeGet(() => http.get("/pet-files/my-listings"));
       if (mounted) {
         const listPayload = myListRes.data;
@@ -98,7 +261,11 @@ export default function Dashboard() {
         setMyListings(list);
       }
 
-      if (mounted) setLoading(false);
+      // 7) Fetch ONLY user's foster requests (requests user made to others)
+      if (mounted && meData?._id) {
+        await fetchUserFosterRequests();
+        setLoading(false);
+      }
     })();
 
     return () => {
@@ -106,21 +273,33 @@ export default function Dashboard() {
     };
   }, [token]);
 
+  // Refresh requests when tab changes
+  useEffect(() => {
+    if (me?._id && tab === 'requests') {
+      fetchAdoptionRequests();
+      fetchUserFosterRequests();
+    }
+  }, [me, tab]);
+
   const stats = useMemo(() => {
     const favCount = favorites.length;
-    const reqCount = requests.length;
+    const reqCount = requests.length + fosterRequests.length;
     const memberSince = me?.createdAt ? new Date(me.createdAt) : null;
     return { favCount, reqCount, memberSince };
-  }, [favorites, requests, me]);
+  }, [favorites, requests, fosterRequests, me]);
 
   const displayStatus = useMemo(() => {
     if (me?.adoptionStatus) return me.adoptionStatus;
-    const statuses = requests.map(r => String(r?.status || "").toLowerCase());
-    if (statuses.includes("approved")) return "Approved — next steps";
-    if (statuses.includes("meeting")) return "Meeting scheduled";
-    if (statuses.length > 0) return "In progress";
+    const allStatuses = [
+      ...requests.map(r => String(r?.status || "").toLowerCase()),
+      ...fosterRequests.map(r => String(r?.status || "").toLowerCase())
+    ];
+    if (allStatuses.includes("approved")) return "Approved — next steps";
+    if (allStatuses.includes("meeting_scheduled")) return "Meeting scheduled";
+    if (allStatuses.includes("in_discussion")) return "In discussion";
+    if (allStatuses.length > 0) return "In progress";
     return "Active";
-  }, [me, requests]);
+  }, [me, requests, fosterRequests]);
 
   if (!token) {
     return (
@@ -171,8 +350,8 @@ export default function Dashboard() {
                 Browse Pets
               </Link>
               <Link to="/blockchain-demo" className="pc-btn pc-btn-outline">
-     Blockchain Demo
-  </Link>
+                Blockchain Demo
+              </Link>
               <Link to="/profile-setup" className="pc-btn pc-btn-primary">
                 Edit Profile
               </Link>
@@ -193,12 +372,11 @@ export default function Dashboard() {
         {/* Stats */}
         <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
           <StatCard title="Favorited Pets" value={stats.favCount} accent="text-indigo-600" />
-          <StatCard title="Adoption Requests" value={stats.reqCount} accent="text-green-600" />
+          <StatCard title="Total Requests" value={stats.reqCount} accent="text-green-600" />
           <StatCard
             title="Member Since"
             value={stats.memberSince ? stats.memberSince.toLocaleDateString() : "—"}
           />
-
         </section>
 
         {/* Tabs */}
@@ -232,29 +410,9 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* ✅ My Listings (uses /pet-files/my-listings) */}
+        {/* ✅ My Listings with Full Fostering Flow */}
         {tab === "myListings" && me?.role === "adopter" && (
-          <section className="pc-card p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">My Listings</h2>
-              <Link to="/create-listing" className="pc-btn pc-btn-primary text-sm">
-                + Add Listing
-              </Link>
-            </div>
-            {/* <SocketTest /> */}  // testing socket connection
-
-            {Array.isArray(myListings) && myListings.length > 0 ? (
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {myListings.map((pet) => (
-                  <MyListingCard key={pet._id} pet={pet} />
-                ))}
-              </div>
-            ) : (
-              <div className="text-gray-500 text-center mt-4">
-                You have no pet listings yet.
-              </div>
-            )}
-          </section>
+          <MyListings />
         )}
 
         {/* Other sections remain untouched */}
@@ -280,16 +438,74 @@ export default function Dashboard() {
               </div>
 
               <div className="pc-card p-5">
-                <h2 className="text-xl font-semibold mb-4">My Adoption Requests</h2>
-                {requests.length ? (
-                  <div className="grid sm:grid-cols-2 gap-5">
-                    {requests.map((r) => (
-                      <RequestCard key={r?._id || r?.id} req={r} />
-                    ))}
+                <h2 className="text-xl font-semibold mb-4">My Requests</h2>
+                <div className="space-y-4">
+                  {/* Adoption Requests Section */}
+                  <div className="border rounded-lg">
+                    <button
+                      onClick={() => setExpandedRequestTab(expandedRequestTab === 'adoption' ? null : 'adoption')}
+                      className="w-full px-4 py-3 text-left flex justify-between items-center hover:bg-gray-50"
+                    >
+                      <span className="font-semibold">Adoption Requests ({requests.length})</span>
+                      <svg 
+                        className={`w-5 h-5 transform transition-transform ${
+                          expandedRequestTab === 'adoption' ? 'rotate-180' : ''
+                        }`}
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {expandedRequestTab === 'adoption' && (
+                      <div className="px-4 pb-4">
+                        {requests.length ? (
+                          <div className="grid sm:grid-cols-2 gap-4">
+                            {requests.map((r) => (
+                              <RequestCard key={r?._id || r?.id} req={r} type="adoption" />
+                            ))}
+                          </div>
+                        ) : (
+                          <Empty text="You have no adoption requests yet." />
+                        )}
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <Empty text="You have no adoption requests yet." />
-                )}
+
+                  {/* Foster Requests Section */}
+                  <div className="border rounded-lg">
+                    <button
+                      onClick={() => setExpandedRequestTab(expandedRequestTab === 'foster' ? null : 'foster')}
+                      className="w-full px-4 py-3 text-left flex justify-between items-center hover:bg-gray-50"
+                    >
+                      <span className="font-semibold">My Foster Applications ({fosterRequests.length})</span>
+                      <svg 
+                        className={`w-5 h-5 transform transition-transform ${
+                          expandedRequestTab === 'foster' ? 'rotate-180' : ''
+                        }`}
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {expandedRequestTab === 'foster' && (
+                      <div className="px-4 pb-4">
+                        {fosterRequests.length ? (
+                          <div className="grid sm:grid-cols-2 gap-4">
+                            {fosterRequests.map((r) => (
+                              <RequestCard key={r?._id || r?.id} req={r} type="foster" />
+                            ))}
+                          </div>
+                        ) : (
+                          <Empty text="You haven't applied to foster any pets yet." />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -327,16 +543,36 @@ export default function Dashboard() {
 
         {tab === "requests" && (
           <section className="pc-card p-5">
-            <h2 className="text-xl font-semibold mb-4">Adoption Requests</h2>
-            {requests.length ? (
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {requests.map((r) => (
-                  <RequestCard key={r?._id || r?.id} req={r} />
-                ))}
+            <h2 className="text-xl font-semibold mb-4">My Applications</h2>
+            <div className="space-y-6">
+              {/* Adoption Requests */}
+              <div>
+                <h3 className="text-lg font-semibold mb-3 text-gray-800">Adoption Applications ({requests.length})</h3>
+                {requests.length ? (
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {requests.map((r) => (
+                      <RequestCard key={r?._id || r?.id} req={r} type="adoption" />
+                    ))}
+                  </div>
+                ) : (
+                  <Empty text="You have no adoption applications yet." />
+                )}
               </div>
-            ) : (
-              <Empty text="You have no adoption requests yet." />
-            )}
+
+              {/* Foster Requests */}
+              <div>
+                <h3 className="text-lg font-semibold mb-3 text-gray-800">Foster Applications ({fosterRequests.length})</h3>
+                {fosterRequests.length ? (
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {fosterRequests.map((r) => (
+                      <RequestCard key={r?._id || r?.id} req={r} type="foster" />
+                    ))}
+                  </div>
+                ) : (
+                  <Empty text="You haven't applied to foster any pets yet." />
+                )}
+              </div>
+            </div>
           </section>
         )}
 
@@ -361,53 +597,7 @@ export default function Dashboard() {
   );
 }
 
-/* ========== MyListingCard (UI-only; no backend changes) ========== */
-function MyListingCard({ pet }: { pet: AnyObj }) {
-  const img =
-    Array.isArray(pet?.images)
-      ? (pet.images[0]?.url || pet.images[0])
-      : "/fallback.jpg";
-
-  const status = String(pet?.status || "available_fostering");
-
-  const onDelete = async () => {
-    if (!confirm("Delete this listing?")) return;
-    try {
-      await http.delete(`/pet-files/user-pet/${pet._id}`);
-      toast.success("Listing deleted!");
-      // quick refresh of the tab (keeps rest of dashboard intact)
-      window.location.reload();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.msg || "Failed to delete listing.");
-    }
-  };
-
-  return (
-    <div className="pc-card p-4 flex flex-col gap-2">
-      <img src={img} className="w-full h-40 object-cover rounded-lg" />
-      <h3 className="font-bold text-lg">{pet?.name || "Pet"}</h3>
-      {pet?.breed && <p className="text-sm text-gray-500">{pet.breed}</p>}
-      <p className="text-sm text-gray-600 capitalize">Status: {status}</p>
-
-      <div className="flex gap-2 mt-auto">
-        <Link to={`/pet/${pet._id}`} className="pc-btn pc-btn-outline w-1/3 text-center">
-          View
-        </Link>
-        <Link
-          to={`/create-listing?edit=${pet._id}`}
-          className="pc-btn pc-btn-primary w-1/3 text-center"
-        >
-          Edit
-        </Link>
-        <button onClick={onDelete} className="pc-btn pc-btn-danger w-1/3">
-          Delete
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ========== UI bits (unchanged) ========== */
+/* ========== UI bits ========== */
 function StatCard({ title, value, accent }: { title: string; value: number | string; accent?: string }) {
   return (
     <div className="pc-card p-5">
@@ -421,45 +611,78 @@ function Empty({ text }: { text: string }) {
   return <p className="text-gray-500">{text}</p>;
 }
 
-function RequestCard({ req }: { req: AnyObj }) {
+function RequestCard({ req, type = "adoption" }: { req: AnyObj; type?: "adoption" | "foster" }) {
   const pet = (req && req.pet) || {};
-  const img = Array.isArray(pet?.images) && pet.images[0] ? pet.images[0] : "/fallback.jpg";
-  const name = pet?.name || "Pet";
+  
+  // Handle different image formats
+  let img = "/fallback.jpg";
+  if (Array.isArray(pet?.images) && pet.images.length > 0) {
+    const firstImage = pet.images[0];
+    img = firstImage.url || firstImage;
+  }
+  
+  const name = pet?.name || req?.petName || "Pet";
   const pid = pet?._id || pet?.id || "";
   const status = String(req?.status || "pending").toLowerCase();
 
-  const badge =
-    status === "approved"
-      ? "bg-green-100 text-green-800"
-      : status === "meeting"
-      ? "bg-blue-100 text-blue-800"
-      : status === "finalized"
-      ? "bg-emerald-100 text-emerald-800"
-      : status === "pending"
-      ? "bg-yellow-100 text-yellow-800"
-      : "bg-gray-100 text-gray-800";
+  const getBadgeClass = (status: string) => {
+    const baseClasses = "px-2 py-0.5 rounded-full text-xs font-medium";
+    
+    if (status === "approved") return `${baseClasses} bg-green-100 text-green-800`;
+    if (status === "in_discussion") return `${baseClasses} bg-blue-100 text-blue-800`;
+    if (status === "meeting_scheduled") return `${baseClasses} bg-purple-100 text-purple-800`;
+    if (status === "pending") return `${baseClasses} bg-yellow-100 text-yellow-800`;
+    if (status === "rejected") return `${baseClasses} bg-red-100 text-red-800`;
+    return `${baseClasses} bg-gray-100 text-gray-800`;
+  };
+
+  const getTypeBadge = (type: string) => {
+    const baseClasses = "px-2 py-0.5 rounded-full text-xs font-medium";
+    return type === "foster" 
+      ? `${baseClasses} bg-orange-100 text-orange-800` 
+      : `${baseClasses} bg-indigo-100 text-indigo-800`;
+  };
+
+  const getStatusDisplay = (status: string) => {
+    return status.replace(/_/g, ' ');
+  };
 
   return (
-    <div className="pc-card overflow-hidden">
+    <div className="pc-card overflow-hidden hover:shadow-md transition-shadow">
       <div className="flex gap-4 p-4">
-        <img src={img} className="w-20 h-20 rounded-lg object-cover" />
+        <img src={img} className="w-20 h-20 rounded-lg object-cover" alt={name} />
         <div className="flex-1">
-          <p className="font-semibold">{name}</p>
-          <p className="text-sm text-gray-600 capitalize">
-            Status: <span className={`px-2 py-0.5 rounded-full text-xs ${badge}`}>{status}</span>
+          <div className="flex items-center gap-2 mb-1">
+            <p className="font-semibold text-gray-900">{name}</p>
+            <span className={getTypeBadge(type)}>
+              {type}
+            </span>
+          </div>
+          <p className="text-sm text-gray-600 mb-2">
+            Status: <span className={getBadgeClass(status)}>{getStatusDisplay(status)}</span>
           </p>
+          {req?.submittedAt && (
+            <p className="text-xs text-gray-500 mb-2">
+              Applied: {new Date(req.submittedAt).toLocaleDateString()}
+            </p>
+          )}
+          {req?.isCurrentFoster && (
+            <p className="text-xs text-green-600 font-medium">
+              ✓ Currently fostering this pet
+            </p>
+          )}
           <div className="mt-2">
-            <Link to={`/pet/${pid}`} className="text-[var(--pc-primary)] hover:underline text-sm">
-              View pet
+            <Link to={`/pet/${pid}`} className="text-[var(--pc-primary)] hover:underline text-sm font-medium">
+              View pet details
             </Link>
           </div>
         </div>
       </div>
 
-      {status === "finalized" && (
+      {status === "approved" && (
         <div className="px-4 pb-4">
-          <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-green-50 text-green-700">
-            🎉 Adoption Finalized!
+          <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-green-50 text-green-700 font-medium">
+            🎉 {type === 'foster' ? 'Foster Approved!' : 'Adoption Approved!'}
           </span>
         </div>
       )}
@@ -477,6 +700,8 @@ function ActivityRow({ item }: { item: AnyObj }) {
       ? "Updated Profile"
       : action === "request_created"
       ? "Created Adoption Request"
+      : action === "foster_request_created"
+      ? "Created Foster Request"
       : action || "Activity";
 
   return (
