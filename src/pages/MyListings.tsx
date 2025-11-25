@@ -356,7 +356,7 @@ const MyListings: React.FC<MyListingsProps> = ({ listings: propListings, onListi
                     <img 
                       src={pet.images[0].url} 
                       alt={pet.name}
-                      className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                      className="w-full h-25 object-cover hover:scale-105 transition-transform duration-300"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-gray-400">

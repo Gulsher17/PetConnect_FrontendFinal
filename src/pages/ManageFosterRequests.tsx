@@ -435,7 +435,7 @@ const ManageFosterRequests: React.FC = () => {
                     <div className="flex-shrink-0">
                       {request.user.avatar ? (
                         <img 
-                          src={request.user.avatar} 
+                          src={request.user.avatar.url} 
                           alt={request.user.name}
                           className="w-12 h-12 rounded-lg object-cover"
                         />
