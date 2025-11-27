@@ -24,7 +24,7 @@ interface ChatInterfaceProps {
     // User info
     userRole: "adopter" | "staff";
     currentUser: any;
-    onTabChange?: (tab: string) => void; // ✅ FIX: Accept string instead of specific types
+    onTabChange?: (tab: string) => void; // 
 }
 
 export default function ChatInterface({
