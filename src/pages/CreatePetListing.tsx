@@ -25,7 +25,7 @@ export default function CreatePetListing() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nav = useNavigate();
 
-  // Your brand colors
+  // Brand colors
   const primaryOrange = '#E76F51';
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -156,7 +156,7 @@ export default function CreatePetListing() {
         submitData.append('images', image);
       });
 
-      // Use your existing http library - it should handle auth automatically
+      // Use existing http library - it should handle auth automatically
       const { data } = await http.post("/pet-files/user-pet/upload", submitData, {
         headers: {
           'Content-Type': 'multipart/form-data'
@@ -212,7 +212,7 @@ export default function CreatePetListing() {
           </p>
         </div>
 
-        {/* Progress Steps - Orange Style */}
+        {/* Progress Steps */}
         <div className="mb-12">
           <div className="flex items-center justify-between relative">
             <div className="absolute top-1/2 left-0 right-0 h-1 bg-gray-200 -translate-y-1/2 -z-10 rounded-full"></div>
