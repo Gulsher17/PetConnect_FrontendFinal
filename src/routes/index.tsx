@@ -11,6 +11,8 @@ import DashboardRouter from "../pages/DashboardRouter";
 import AdminDashboard from "../pages/AdminDashboard"
 import StaffDashboard from "../pages/StaffDashboard";
 import CreateListing from "@/pages/CreateListing";
+import TrainerDashboard from "../pages/TrainerDashboard";
+
 
 export default function AppRouter() {
   return (
@@ -32,6 +34,10 @@ export default function AppRouter() {
         
         {/* FIXED: admin dashboard route */}
         <Route path="/admin" element={<PrivateRoute><AdminDashboard /></PrivateRoute>} />
+
+        {/* FIXED: trainer dashboard route */}
+        <Route path="/trainer" element={<PrivateRoute><TrainerDashboard /></PrivateRoute>} />
+
 
         {/* Optional: smart router (hit /app to route by role) */}
         <Route path="/app" element={<PrivateRoute><DashboardRouter /></PrivateRoute>} />

@@ -5,8 +5,6 @@ import NavBar from "../components/layout/NavBar";
 import Footer from "../components/layout/Footer";
 import { useAuth } from "../features/auth/useAuth";
 import { http } from "../lib/http";
-import ChatInterface from "../components/chat/ChatInterface"
-
 import toast from "react-hot-toast";
 import { useSocket } from "../hooks/useSocket";
 import type { MessageData } from "../types/socket.types";
@@ -27,41 +25,34 @@ export default function Dashboard() {
   const [activity, setActivity] = useState<AnyObj[]>([]);
   const [myListings, setMyListings] = useState<AnyObj[]>([]);
 
-  // ✅ CHAT STATE
+  // CHAT STATE
   const [chatConversations, setChatConversations] = useState<AnyObj[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<AnyObj | null>(null);
   const [conversationMessages, setConversationMessages] = useState<MessageData[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [newMessage, setNewMessage] = useState("");
   const [staffMembers, setStaffMembers] = useState<AnyObj[]>([]);
-  const handleTabChange = (tab: string) => {
-    setTab(tab as any);
-  };
 
   const [tab, setTab] = useState<
     "overview" | "favorites" | "requests" | "activity" | "myListings" | "chat"
   >("overview");
 
+ 
 
-
+  // Helper function to safely get unread count
   const getUnreadCount = (conversation: AnyObj, userId: string | undefined): number => {
     if (!conversation.unreadCounts || !userId) return 0;
 
-    // Get the last message to check if it's from another user
-    const lastMessage = conversation.lastMessage;
-    if (lastMessage && lastMessage.sender?._id === userId) {
-      return 0;
-    }
-
+    // Handle both Map and plain object formats
     if (conversation.unreadCounts instanceof Map) {
       return conversation.unreadCounts.get(userId) || 0;
     } else {
+      // Handle plain object format { "userId": count }
       return conversation.unreadCounts[userId] || 0;
     }
   };
-
-  //  Chat functions
-  const handleStartChat = async () => {
+  // Chat functions
+  const handleStartChat = async (staffName: string) => {
     try {
       if (staffMembers.length === 0) {
         toast.error('No staff members available');
@@ -79,7 +70,7 @@ export default function Dashboard() {
         existingRequests = [];
       }
 
-      // IF NO ADOPTION REQUESTS, SHOW ERROR MESSAGE
+      // ✅ IF NO ADOPTION REQUESTS, SHOW ERROR MESSAGE
       if (existingRequests.length === 0) {
         toast.error(
           <div>
@@ -97,12 +88,12 @@ export default function Dashboard() {
         return;
       }
 
-      //  USE EXISTING ADOPTION REQUEST TO CREATE/FIND CHAT
+      // USE EXISTING ADOPTION REQUEST TO CREATE/FIND CHAT
       const adoptionRequestId = existingRequests[0]._id;
 
       console.log('Creating chat for adoption request:', adoptionRequestId);
 
-      //  CREATE/FIND REAL CHAT USING THE ADOPTION REQUEST
+      // CREATE/FIND REAL CHAT USING THE ADOPTION REQUEST
       const chatRes = await http.get(`/chats/adoption/${adoptionRequestId}`);
 
       if (chatRes.data && chatRes.data.chat) {
@@ -152,6 +143,8 @@ export default function Dashboard() {
   const handleSendMessage = () => {
     if (!selectedConversation || !newMessage.trim() || !socket) return;
 
+    // debugging REMOVE THE DEMO CHAT SIMULATION - ALWAYS USE REAL SOCKET
+    // For ALL chats, use the real socket flow
 
     socket.emit('send-message', {
       chatId: selectedConversation._id,
@@ -159,7 +152,21 @@ export default function Dashboard() {
       messageType: 'text'
     });
 
+    const optimisticMessage: MessageData = {
+      _id: `temp_${Date.now()}`,
+      content: newMessage.trim(),
+      sender: {
+        _id: me?._id,
+        name: me?.name || 'You',
+        email: me?.email,
+        role: me?.role
+      },
+      createdAt: new Date().toISOString(),
+      chat: selectedConversation._id,
+      messageType: 'text'
+    };
 
+    setConversationMessages(prev => [...prev, optimisticMessage]);
     setNewMessage("");
 
     // Stop typing
@@ -240,14 +247,9 @@ export default function Dashboard() {
           setMyListings(list);
         }
 
-        // 7)  Load chat conversations - USE EXISTING ENDPOINT
         try {
           const chatRes = await http.get("/chats");
-          //Debugging
-          // console.log('CHATS API RESPONSE:', chatRes.data);
-          // console.log(' First conversation object:', chatRes.data.chats?.[0]);
-          // console.log(' Does first conversation have lastMessage?:', chatRes.data.chats?.[0]?.lastMessage);
-          // console.log(' Chat conversations response:', chatRes.data);
+          // console.log('📨 Chat conversations response:', chatRes.data);
 
           let chats = [];
           if (Array.isArray(chatRes.data?.chats)) {
@@ -297,7 +299,7 @@ export default function Dashboard() {
             );
           }
 
-          //    If no staff found in chats, create demo staff for UI
+          //Debugging  If no staff found in chats, create demo staff for UI
           if (availableStaff.length === 0) {
             availableStaff = [{
               _id: 'support-staff',
@@ -375,7 +377,7 @@ export default function Dashboard() {
     };
   }, [socket, selectedConversation, me]);
 
-
+  // Load messages when conversation is selected
   useEffect(() => {
     if (!selectedConversation) {
       setConversationMessages([]);
@@ -387,12 +389,12 @@ export default function Dashboard() {
       socket.emit('join-chat', selectedConversation._id);
     }
 
-    // Debugging REMOVE DEMO MESSAGES - ALWAYS LOAD FROM BACKEND
+    // ✅ REMOVE DEMO MESSAGES - ALWAYS LOAD FROM BACKEND
     (async () => {
       try {
         let messagesRes;
 
-        // Try the main chats endpoint
+        // Try the main chats endpoint (correct format)
         try {
           messagesRes = await http.get(`/chats/${selectedConversation._id}/messages`);
         } catch (error) {
@@ -406,7 +408,7 @@ export default function Dashboard() {
           }
         }
 
-        // console.log('📨 Actual messages response:', messagesRes.data);
+        console.log('📨 Actual messages response:', messagesRes.data);
 
         if (Array.isArray(messagesRes.data)) {
           setConversationMessages(messagesRes.data);
@@ -429,7 +431,7 @@ export default function Dashboard() {
     const reqCount = requests.length;
     const memberSince = me?.createdAt ? new Date(me.createdAt) : null;
 
-    // FIX: Handle unreadCounts as both Map and plain object
+    // Handle unreadCounts as both Map and plain object
     const unreadChats = chatConversations.filter(conv => {
       if (!conv.unreadCounts) return false;
 
@@ -567,32 +569,194 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* CHAT SECTION */}
+        {/* ✅ CHAT SECTION */}
         {tab === "chat" && (
-          <ChatInterface
-            // Chat state
-            chatConversations={chatConversations}
-            selectedConversation={selectedConversation}
-            conversationMessages={conversationMessages}
-            isTyping={isTyping}
-            newMessage={newMessage}
-            staffMembers={staffMembers}
-            connected={connected}
+          <div className="pc-card p-5">
+            {!selectedConversation ? (
+              // Conversations List
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold">Your Conversations</h2>
+                  <div className="relative">
+                    <button
+                      onClick={() => {
+                        if (staffMembers.length > 0) {
+                          handleStartChat(staffMembers[0].name);
+                        } else {
+                          toast.error('No staff members available');
+                        }
+                      }}
+                      className="pc-btn pc-btn-primary text-sm"
+                    >
+                      + Message Staff
+                    </button>
+                  </div>
+                </div>
 
-            // Chat functions
-            setSelectedConversation={setSelectedConversation}
-            setNewMessage={setNewMessage}
-            handleStartChat={handleStartChat}
-            handleSendMessage={handleSendMessage}
-            handleTypingStart={handleTypingStart}
-            handleTypingStop={handleTypingStop}
-            getUnreadCount={(conv) => getUnreadCount(conv, me?._id)}
+                {chatConversations.length > 0 ? (
+                  <div className="space-y-3">
+                    {chatConversations.map((conversation) => {
+                      const otherParticipant = conversation.participants?.find(
+                        (p: any) => p._id !== me?._id
+                      );
 
-            // User info
-            userRole="adopter"
-            currentUser={me}
-            onTabChange={handleTabChange}
-          />
+                      return (
+                        <div
+                          key={conversation._id}
+                          className="p-4 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                          onClick={() => setSelectedConversation(conversation)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
+                                <span className="text-indigo-700 font-bold">
+                                  {otherParticipant?.name?.[0] || "U"}
+                                </span>
+                              </div>
+                              <div>
+                                <p className="font-semibold">
+                                  {otherParticipant?.name || "Unknown User"}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                  {conversation.lastMessage?.content || "No messages yet"}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              {conversation.lastMessage && (
+                                <p className="text-xs text-gray-500">
+                                  {new Date(conversation.lastMessage.createdAt).toLocaleDateString()}
+                                </p>
+                              )}
+                              {(() => {
+                                const unreadCount = getUnreadCount(conversation, me?._id);
+                                return unreadCount > 0 ? (
+                                  <span className="inline-block mt-1 px-2 py-1 bg-red-500 text-white text-xs rounded-full">
+                                    {unreadCount}
+                                  </span>
+                                ) : null;
+                              })()}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center text-gray-500 py-8">
+                    <p className="mb-4">No chat conversations yet.</p>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-md mx-auto">
+                      <p className="font-semibold text-blue-800 mb-2">How to start chatting with staff:</p>
+                      <ol className="text-sm text-blue-700 text-left list-decimal list-inside space-y-1">
+                        <li>Apply for pet adoption first</li>
+                        <li>Staff will review your application</li>
+                        <li>Chat will be available once you have an active adoption request</li>
+                      </ol>
+                      <button
+                        onClick={() => setTab('requests')}
+                        className="mt-3 pc-btn pc-btn-primary text-sm"
+                      >
+                        Check Adoption Requests
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              // Active Chat
+              <div>
+                <div className="flex items-center gap-3 mb-4">
+                  <button
+                    onClick={() => setSelectedConversation(null)}
+                    className="pc-btn pc-btn-outline text-sm"
+                  >
+                    ← Back
+                  </button>
+                  {selectedConversation.participants?.map((participant: any) => (
+                    participant._id !== me?._id && (
+                      <div key={participant._id} className="flex items-center gap-2">
+                        <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
+                          <span className="text-indigo-700 font-bold text-sm">
+                            {participant.name?.[0] || "U"}
+                          </span>
+                        </div>
+                        <h2 className="text-xl font-semibold">
+                          {participant.name || "Unknown User"}
+                        </h2>
+                        {participant.role && (
+                          <span className="text-sm text-gray-500 ml-2">
+                            ({participant.role})
+                          </span>
+                        )}
+                      </div>
+                    )
+                  ))}
+                  {isTyping && (
+                    <span className="text-sm text-gray-500 ml-2">
+                      (typing...)
+                    </span>
+                  )}
+                </div>
+
+                {/* Messages */}
+                <div className="h-96 overflow-y-auto border rounded-lg p-4 mb-4 bg-gray-50 space-y-3">
+                  {conversationMessages.length === 0 ? (
+                    <div className="text-center text-gray-500 mt-20">
+                      No messages yet. Start the conversation!
+                    </div>
+                  ) : (
+                    conversationMessages.map((message) => (
+                      <div
+                        key={message._id}
+                        className={`flex ${message.sender?.name === me?.name ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${message.sender?.name === me?.name
+                            ? 'bg-indigo-500 text-white rounded-br-none'
+                            : 'bg-white border rounded-bl-none'
+                            }`}
+                        >
+                          <p className="text-sm">{message.content}</p>
+                          <p
+                            className={`text-xs mt-1 ${message.sender?.name === me?.name ? 'text-indigo-200' : 'text-gray-500'
+                              }`}
+                          >
+                            {new Date(message.createdAt).toLocaleTimeString()}
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Message Input */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={(e) => {
+                      setNewMessage(e.target.value);
+                      if (e.target.value.length > 0) {
+                        handleTypingStart();
+                      } else {
+                        handleTypingStop();
+                      }
+                    }}
+                    onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                    placeholder="Type your message..."
+                    className="flex-1 pc-input"
+                  />
+                  <button
+                    onClick={handleSendMessage}
+                    className="pc-btn pc-btn-primary"
+                    disabled={!newMessage.trim()}
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Rest of your existing tabs... */}
@@ -777,7 +941,7 @@ function RequestCard({ req, onStartChat }: { req: AnyObj; onStartChat?: (name: s
   );
 }
 
-
+// Rest of your existing components remain exactly the same...
 function MyListingCard({ pet }: { pet: AnyObj }) {
   const img = Array.isArray(pet?.images) ? (pet.images[0]?.url || pet.images[0]) : "/fallback.jpg";
   const status = String(pet?.status || "available_fostering");

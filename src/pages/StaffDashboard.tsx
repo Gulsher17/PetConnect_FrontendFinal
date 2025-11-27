@@ -1,160 +1,49 @@
 // src/pages/StaffDashboard.tsx
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import { Link } from "react-router-dom";
 
 import NavBar from "../components/layout/NavBar";
 import Footer from "../components/layout/Footer";
+import ChatInterface from "../components/chat/ChatInterface";
 import { useAuth } from "../features/auth/useAuth";
 import { http } from "../lib/http";
+import { useSocket } from "../hooks/useSocket";
+import type { MessageData } from "../types/socket.types";
 
-/* =========================
-   Types (defensive, partial)
-   ========================= */
-type ImageObj = { url?: string; isPrimary?: boolean } | null | undefined;
+type AnyObj = Record<string, any>;
 
-export interface Pet {
-  _id: string;
-  name?: string;
-  breed?: string;
-  age?: number;
-  gender?: string;
-  status?: string;
-  images?: ImageObj[];
-  organization?: { name?: string };
-}
 
-export interface MeetingInfo {
-  date?: string | Date;
-  confirmed?: boolean;
-  type?: "virtual" | "in-person";
-  status?: "scheduled" | "completed";
-  location?: string;
-  startTime?: string;
-  endTime?: string;
-}
+const getUnreadCount = (conversation: AnyObj, userId: string | undefined): number => {
+  if (!conversation.unreadCounts || !userId) return 0;
 
-export interface Adopter {
-  _id?: string;
-  name?: string;
-  email?: string;
-  location?: string;
-}
+  // Get the last message to check if it's from another user
+  const lastMessage = conversation.lastMessage;
+  if (lastMessage && lastMessage.sender?._id === userId) {
+    return 0; 
+  }
 
-export interface AdoptionReq {
-  _id: string;
-  status:
-    | "pending"
-    | "approved"
-    | "ignored"
-    | "rejected"
-    | "on_hold"
-    | "finalized"
-    | "meeting"
-    | "chat"
-    | "agreement_sent"
-    | "agreement_signed"
-    | "payment_pending"
-    | "payment_completed"
-    | "payment_failed";
-  pet?: Pet | null;
-  adopter?: Adopter | null;
-  meeting?: MeetingInfo;
-}
-
-export interface AvailabilitySlot {
-  day: string; // "Monday" etc
-  startTime: string; // "09:00"
-  endTime: string; // "17:00"
-  date?: string; // optional ISO
-}
-
-/* =========================
-   Helpers
-   ========================= */
-const statusChip = (s?: string) => {
-  const base = "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium";
-  switch (s) {
-    case "pending":
-      return base + " bg-yellow-100 text-yellow-800";
-    case "approved":
-      return base + " bg-blue-100 text-blue-800";
-    case "meeting":
-      return base + " bg-indigo-100 text-indigo-800";
-    case "finalized":
-      return base + " bg-green-100 text-green-800";
-    case "ignored":
-    case "rejected":
-      return base + " bg-red-100 text-red-800";
-    case "on_hold":
-      return base + " bg-gray-200 text-gray-700";
-    case "chat":
-      return base + " bg-purple-100 text-purple-800";
-    case "agreement_sent":
-    case "agreement_signed":
-      return base + " bg-emerald-100 text-emerald-800";
-    case "payment_pending":
-      return base + " bg-orange-100 text-orange-800";
-    case "payment_completed":
-      return base + " bg-green-100 text-green-800";
-    case "payment_failed":
-      return base + " bg-red-100 text-red-800";
-    default:
-      return base + " bg-gray-100 text-gray-800";
+  if (conversation.unreadCounts instanceof Map) {
+    return conversation.unreadCounts.get(userId) || 0;
+  } else {
+    return conversation.unreadCounts[userId] || 0;
   }
 };
 
-function getPrimaryImage(images?: ImageObj[]): string {
-  if (!images || images.length === 0) return "/placeholder.jpg";
-  const list = images.filter(Boolean) as { url?: string; isPrimary?: boolean }[];
-  const primary = list.find((i) => i?.isPrimary && i?.url);
-  return (primary?.url ?? list.find((i) => i?.url)?.url) || "/placeholder.jpg";
-}
-
-function title(s?: string) {
-  if (!s) return "";
-  return s
-    .toLowerCase()
-    .split(" ")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
-}
-
 /* =========================
-   API Calls (exact endpoints)
+   API Calls
    ========================= */
-const fetchOrgPets = async (): Promise<Pet[]> => {
-  const res = await http.get("/pets/organization");
-  return res.data ?? [];
-};
-
-const fetchRequests = async (): Promise<AdoptionReq[]> => {
+const fetchRequests = async (): Promise<AnyObj[]> => {
   const res = await http.get("/adoptions/requests");
   return res.data ?? [];
 };
 
-const fetchAvailability = async (): Promise<AvailabilitySlot[]> => {
-  const res = await http.get("/auth/staff/availability");
-  // Backend returns [] if none
-  return res.data ?? [];
-};
-
-const postAvailability = async (slots: AvailabilitySlot[]) => {
-  // availabilityService.setWeeklyAvailability expects array overwrite
-  return http.post("/auth/staff/availability", { slots });
-};
-
 const patchRequestStatus = async (d: {
   id: string;
-  status: AdoptionReq["status"];
+  status: string;
   meetingDate?: string;
 }) => {
   return http.patch(`/adoptions/${d.id}/status`, d);
-};
-
-const patchPetStatus = async (d: { id: string; status: string }) => {
-  return http.patch(`/pets/${d.id}/status`, { status: d.status });
 };
 
 /* =========================
@@ -163,6 +52,15 @@ const patchPetStatus = async (d: { id: string; status: string }) => {
 export default function StaffDashboard() {
   const { user } = useAuth();
   const qc = useQueryClient();
+  const { socket, connected } = useSocket();
+
+  // CHAT STATE
+  const [chatConversations, setChatConversations] = useState<AnyObj[]>([]);
+  const [selectedConversation, setSelectedConversation] = useState<AnyObj | null>(null);
+  const [conversationMessages, setConversationMessages] = useState<MessageData[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
+  const [newMessage, setNewMessage] = useState("");
+  const [activeTab, setActiveTab] = useState<"requests" | "pets" | "availability" | "chat">("requests");
 
   if (!user || user.role !== "staff") {
     return (
@@ -173,9 +71,118 @@ export default function StaffDashboard() {
   }
 
   // Queries
-  const petsQ = useQuery({ queryKey: ["orgPets"], queryFn: fetchOrgPets });
   const reqQ = useQuery({ queryKey: ["adoptionRequests"], queryFn: fetchRequests });
-  const availQ = useQuery({ queryKey: ["staffAvailability"], queryFn: fetchAvailability });
+
+  // Socket event listeners for real-time chat
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleNewMessage = (message: MessageData) => {
+      if (message.chat === selectedConversation?._id) {
+        setConversationMessages(prev => [...prev, message]);
+      }
+
+      setChatConversations(prev =>
+        prev.map(conv =>
+          conv._id === message.chat
+            ? { 
+                ...conv, 
+                lastMessage: message,
+                lastMessageAt: message.createdAt
+              }
+            : conv
+        )
+      );
+
+      if (message.chat !== selectedConversation?._id) {
+        toast.success(`New message from ${message.sender.name}`);
+      }
+    };
+
+    const handleUserTyping = (data: { userId: string; userName: string; chatId: string }) => {
+      if (data.chatId === selectedConversation?._id && data.userId !== user?._id) {
+        setIsTyping(true);
+      }
+    };
+
+    const handleUserStopTyping = (data: { userId: string; userName: string; chatId: string }) => {
+      if (data.chatId === selectedConversation?._id && data.userId !== user?._id) {
+        setIsTyping(false);
+      }
+    };
+
+    socket.on('new-message', handleNewMessage);
+    socket.on('user-typing', handleUserTyping);
+    socket.on('user-stop-typing', handleUserStopTyping);
+
+    return () => {
+      socket.off('new-message', handleNewMessage);
+      socket.off('user-typing', handleUserTyping);
+      socket.off('user-stop-typing', handleUserStopTyping);
+    };
+  }, [socket, selectedConversation, user]);
+
+  //Load staff chats when component mounts
+  useEffect(() => {
+    if (!user?._id) return;
+
+    const loadStaffChats = async () => {
+      try {
+        const chatRes = await http.get("/chats");
+
+        let chats = [];
+        if (Array.isArray(chatRes.data?.chats)) {
+          chats = chatRes.data.chats;
+        } else if (Array.isArray(chatRes.data)) {
+          chats = chatRes.data;
+        } else if (chatRes.data?.success && Array.isArray(chatRes.data.data)) {
+          chats = chatRes.data.data;
+        }
+
+        const staffChats = chats.filter((chat: AnyObj) => 
+          chat.participants?.some((p: any) => p.user?._id === user._id || p._id === user._id)
+        );
+
+        setChatConversations(staffChats);
+      } catch (error) {
+        console.log('Staff chats loading failed:', error);
+        setChatConversations([]);
+      }
+    };
+
+    loadStaffChats();
+  }, [user]);
+
+  // Load messages when conversation is selected
+  useEffect(() => {
+    if (!selectedConversation) {
+      setConversationMessages([]);
+      return;
+    }
+
+    if (socket && connected) {
+      socket.emit('join-chat', selectedConversation._id);
+    }
+
+    (async () => {
+      try {
+        const messagesRes = await http.get(`/chats/${selectedConversation._id}/messages`);
+
+        if (Array.isArray(messagesRes.data)) {
+          setConversationMessages(messagesRes.data);
+        } else if (Array.isArray(messagesRes.data?.messages)) {
+          setConversationMessages(messagesRes.data.messages);
+        } else if (messagesRes.data?.success && Array.isArray(messagesRes.data.data)) {
+          setConversationMessages(messagesRes.data.data);
+        } else {
+          setConversationMessages([]);
+        }
+      } catch (error) {
+        console.log('Staff messages loading failed:', error);
+        setConversationMessages([]);
+      }
+    })();
+  }, [selectedConversation, socket, connected]);
 
   // Mutations
   const mUpdateReq = useMutation({
@@ -187,43 +194,43 @@ export default function StaffDashboard() {
     onError: (e: any) => toast.error(e?.response?.data?.msg ?? "Failed to update request"),
   });
 
-  const mPetStatus = useMutation({
-    mutationFn: patchPetStatus,
-    onSuccess: () => {
-      toast.success("Pet status updated");
-      qc.invalidateQueries({ queryKey: ["orgPets"] });
-    },
-    onError: (e: any) => toast.error(e?.response?.data?.msg ?? "Failed to update pet"),
-  });
+  // Chat functions for staff
+  const handleTypingStart = () => {
+    if (selectedConversation && socket && !isTyping) {
+      socket.emit('typing-start', { chatId: selectedConversation._id });
+    }
+  };
 
-  const mAvailability = useMutation({
-    mutationFn: (newSlot: AvailabilitySlot) => {
-      const current = (availQ.data ?? []) as AvailabilitySlot[];
-      const merged = [...current, newSlot];
-      return postAvailability(merged);
-    },
-    onSuccess: () => {
-      toast.success("Availability saved");
-      qc.invalidateQueries({ queryKey: ["staffAvailability"] });
-    },
-    onError: (e: any) => toast.error(e?.response?.data?.msg ?? "Failed to save availability"),
-  });
+  const handleTypingStop = () => {
+    if (selectedConversation && socket && isTyping) {
+      socket.emit('typing-stop', { chatId: selectedConversation._id });
+      setIsTyping(false);
+    }
+  };
 
-  // Local state for slot form
-  const [slot, setSlot] = useState<AvailabilitySlot>({
-    day: "Monday",
-    startTime: "09:00",
-    endTime: "17:00",
-  });
+  const handleSendMessage = () => {
+    if (!selectedConversation || !newMessage.trim() || !socket) return;
 
-  const pets = useMemo(() => (Array.isArray(petsQ.data) ? petsQ.data : []), [petsQ.data]);
+    socket.emit('send-message', {
+      chatId: selectedConversation._id,
+      content: newMessage.trim(),
+      messageType: 'text'
+    });
+
+
+    setNewMessage("");
+    socket.emit('typing-stop', { chatId: selectedConversation._id });
+    setIsTyping(false);
+  };
+
+  // Create wrapper function for onTabChange
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab as any);
+  };
+
   const requests = useMemo(
     () => (Array.isArray(reqQ.data) ? reqQ.data : []),
     [reqQ.data]
-  );
-  const availability = useMemo(
-    () => (Array.isArray(availQ.data) ? availQ.data : []),
-    [availQ.data]
   );
 
   /* ============ UI bits ============ */
@@ -231,35 +238,31 @@ export default function StaffDashboard() {
     <div className="text-sm text-gray-500">{children}</div>
   );
 
-  const Section = ({ title, action, children }: any) => (
+  const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
     <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">{title}</h2>
-        {action}
-      </div>
+      <h2 className="text-lg font-semibold mb-4">{title}</h2>
       {children}
     </section>
   );
 
-  const onApprove = (r: AdoptionReq) =>
+  const onApprove = (r: AnyObj) =>
     mUpdateReq.mutate({ id: r._id, status: "approved" });
 
-  const onIgnore = (r: AdoptionReq) =>
+  const onIgnore = (r: AnyObj) =>
     mUpdateReq.mutate({ id: r._id, status: "ignored" });
 
-  const onMeeting = (r: AdoptionReq) => {
+  const onMeeting = (r: AnyObj) => {
     const v = window.prompt(
       "Enter meeting date & time (ISO or YYYY-MM-DDTHH:mm). Example: 2025-11-05T14:00"
     );
     if (!v) return;
-    // Backend expects meetingDate in body with status=meeting
     mUpdateReq.mutate({ id: r._id, status: "meeting", meetingDate: new Date(v).toISOString() });
   };
 
-  const onFinalize = (r: AdoptionReq) =>
+  const onFinalize = (r: AnyObj) =>
     mUpdateReq.mutate({ id: r._id, status: "finalized" });
 
-  const RequestCard = ({ r }: { r: AdoptionReq }) => {
+  const RequestCard = ({ r }: { r: AnyObj }) => {
     const pet = r.pet;
     const adopter = r.adopter;
 
@@ -267,28 +270,24 @@ export default function StaffDashboard() {
       <div className="rounded-xl border border-gray-100 p-4 hover:shadow-sm transition bg-white">
         <div className="flex gap-3">
           <img
-            src={getPrimaryImage(pet?.images)}
+            src={pet?.images?.[0]?.url || "/placeholder.jpg"}
             className="w-20 h-20 object-cover rounded-lg border"
+            alt={pet?.name || "Pet"}
           />
           <div className="flex-1">
             <div className="flex items-center justify-between gap-2">
               <h3 className="font-semibold">
                 {(pet?.name || "Pet") + (pet?.breed ? ` • ${pet.breed}` : "")}
               </h3>
-              <span className={statusChip(r.status)}>{r.status}</span>
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                {r.status}
+              </span>
             </div>
             <p className="text-xs text-gray-500">
               Adopter: {adopter?.name || "—"}
               {adopter?.email ? ` • ${adopter.email}` : ""}
               {adopter?.location ? ` • ${adopter.location}` : ""}
             </p>
-            {r.meeting?.date && (
-              <p className="text-xs text-indigo-700 mt-1">
-                Meeting: {new Date(r.meeting.date).toLocaleString()}{" "}
-                {r.meeting?.type ? `(${r.meeting.type})` : ""}
-                {r.meeting?.confirmed ? " • Confirmed" : ""}
-              </p>
-            )}
 
             <div className="flex flex-wrap gap-2 mt-3">
               {r.status === "pending" && (
@@ -332,64 +331,6 @@ export default function StaffDashboard() {
     );
   };
 
-  const PetCard = ({ p }: { p: Pet }) => {
-    return (
-      <div className="rounded-xl border border-gray-100 p-3 hover:shadow-sm transition bg-white">
-        <img
-          src={getPrimaryImage(p.images)}
-          className="w-full h-36 object-cover rounded-lg border"
-        />
-        <div className="mt-2">
-          <div className="flex items-center justify-between">
-            <h4 className="font-semibold">{p.name || "Unnamed"}</h4>
-            <span className="text-[11px] px-2 py-0.5 rounded bg-gray-100 text-gray-700">
-              {p.status || "—"}
-            </span>
-          </div>
-          <p className="text-xs text-gray-500">
-            {p.breed ? title(p.breed) : "—"}
-            {p.organization?.name ? ` • ${p.organization.name}` : ""}
-          </p>
-
-          <select
-            className="mt-3 w-full border rounded-md text-sm p-2"
-            defaultValue=""
-            onChange={(e) =>
-              e.target.value &&
-              mPetStatus.mutate({ id: p._id, status: e.target.value })
-            }
-          >
-            <option value="">Update Status…</option>
-            <option value="Available">Available</option>
-            <option value="Ready for Treatment">Ready for Treatment</option>
-            <option value="In Treatment">In Treatment</option>
-            <option value="Ready for Adoption">Ready for Adoption</option>
-            <option value="In Training">In Training</option>
-            <option value="Training Complete">Training Complete</option>
-            <option value="Unavailable">Unavailable</option>
-          </select>
-
-          <Link
-            to={`/pets/${p._id}`}
-            className="mt-2 inline-flex text-xs text-indigo-600 hover:underline"
-          >
-            View profile →
-          </Link>
-        </div>
-      </div>
-    );
-  };
-
-  const handleAddSlot = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!slot.day || !slot.startTime || !slot.endTime) return;
-    if (slot.startTime >= slot.endTime) {
-      toast.error("Start time must be before end time");
-      return;
-    }
-    mAvailability.mutate(slot);
-  };
-
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <NavBar />
@@ -402,88 +343,77 @@ export default function StaffDashboard() {
           </div>
         </header>
 
-        {/* Availability */}
-        <Section
-          title="My Availability"
-          action={
-            <form onSubmit={handleAddSlot} className="flex items-center gap-2">
-              <select
-                className="border rounded-md text-sm p-2"
-                value={slot.day}
-                onChange={(e) => setSlot((s) => ({ ...s, day: e.target.value }))}
-              >
-                {["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"].map((d) => (
-                  <option key={d} value={d}>{d}</option>
+        {/* TABS NAVIGATION */}
+        <div className="border-b flex gap-6 text-lg mb-6 flex-wrap">
+          {(["requests", "pets", "availability", "chat"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setActiveTab(t)}
+              className={`pb-2 capitalize ${activeTab === t
+                ? "border-b-2 border-indigo-600 text-indigo-600 font-semibold"
+                : "text-gray-500 hover:text-gray-700"
+                }`}
+            >
+              {t} {t === 'chat' && chatConversations.length > 0 && (
+                <span className="ml-1 bg-red-500 text-white text-xs rounded-full px-2 py-1">
+                  {chatConversations.length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* CHAT TAB */}
+        {activeTab === "chat" && (
+          <ChatInterface
+            chatConversations={chatConversations}
+            selectedConversation={selectedConversation}
+            conversationMessages={conversationMessages}
+            isTyping={isTyping}
+            newMessage={newMessage}
+            staffMembers={[]}
+            connected={connected}
+            setSelectedConversation={setSelectedConversation}
+            setNewMessage={setNewMessage}
+            handleStartChat={() => {}} 
+            handleSendMessage={handleSendMessage}
+            handleTypingStart={handleTypingStart}
+            handleTypingStop={handleTypingStop}
+            getUnreadCount={(conv) => getUnreadCount(conv, user?._id)}
+            userRole="staff"
+            currentUser={user}
+            onTabChange={handleTabChange} 
+          />
+        )}
+
+        {/* REQUESTS TAB */}
+        {activeTab === "requests" && (
+          <Section title="Adoption Requests">
+            {requests.length === 0 ? (
+              <Empty>No adoption requests for your organization.</Empty>
+            ) : (
+              <div className="space-y-3">
+                {requests.map((r) => (
+                  <RequestCard key={r._id} r={r} />
                 ))}
-              </select>
-              <input
-                type="time"
-                className="border rounded-md text-sm p-2"
-                value={slot.startTime}
-                onChange={(e) => setSlot((s) => ({ ...s, startTime: e.target.value }))}
-                required
-              />
-              <input
-                type="time"
-                className="border rounded-md text-sm p-2"
-                value={slot.endTime}
-                onChange={(e) => setSlot((s) => ({ ...s, endTime: e.target.value }))}
-                required
-              />
-              <button
-                type="submit"
-                className="px-3 py-2 rounded-md bg-indigo-600 text-white text-sm"
-              >
-                Add Slot
-              </button>
-            </form>
-          }
-        >
-          {availability.length === 0 ? (
-            <Empty>No availability set yet.</Empty>
-          ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {availability.map((a, idx) => (
-                <div
-                  key={`${a.day}-${a.startTime}-${a.endTime}-${idx}`}
-                  className="rounded-lg border border-gray-100 p-3 text-sm bg-white"
-                >
-                  <div className="font-medium">{a.day}</div>
-                  <div className="text-gray-600">
-                    {a.startTime} – {a.endTime}
-                    {a.date ? ` • ${new Date(a.date).toLocaleDateString()}` : ""}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Section>
+              </div>
+            )}
+          </Section>
+        )}
 
-        {/* Adoption Requests */}
-        <Section title="Adoption Requests">
-          {requests.length === 0 ? (
-            <Empty>No adoption requests for your organization.</Empty>
-          ) : (
-            <div className="space-y-3">
-              {requests.map((r) => (
-                <RequestCard key={r._id} r={r} />
-              ))}
-            </div>
-          )}
-        </Section>
-
-        {/* Pets */}
-        <Section title="My Shelter Pets">
-          {pets.length === 0 ? (
+        {/* right now PETS TAB - EMPTY SINCE NO API */}
+        {activeTab === "pets" && (
+          <Section title="My Shelter Pets">
             <Empty>No pets under your organization yet.</Empty>
-          ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {pets.map((p) => (
-                <PetCard key={p._id} p={p} />
-              ))}
-            </div>
-          )}
-        </Section>
+          </Section>
+        )}
+
+        {/* Right now AVAILABILITY TAB - EMPTY SINCE NO API */}
+        {activeTab === "availability" && (
+          <Section title="My Availability">
+            <Empty>No availability set yet.</Empty>
+          </Section>
+        )}
       </main>
       <Footer />
     </div>

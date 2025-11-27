@@ -42,7 +42,11 @@ export default function DashboardRouter() {
         nav("/staff", { replace: true });
       } else if (role === "admin") {
         nav("/admin", { replace: true });
-      } else {
+        
+      }  else if (role === "trainer") {
+        nav("/trainer", { replace: true });
+      }
+      else {
         nav("/dashboard", { replace: true }); // adopter dashboard (already exists)
       }
       setLoading(false);
